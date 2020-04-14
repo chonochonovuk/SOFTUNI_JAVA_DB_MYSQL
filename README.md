@@ -1,0 +1,2 @@
+# SOFTUNI_JAVA_DB_MYSQL
+MySQL and Java DB
