@@ -6,10 +6,7 @@ import annotations.Id;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,6 +21,65 @@ public class EntityManager<E> implements DbContext<E>{
         this.connection = connection;
     }
 
+    @Override
+    public <T> void doAlter(Class<T> entity) throws SQLException {
+       String query = "ALTER TABLE " + this.getTableName(entity) + " ADD ";
+       String columnsToAdd = "";
+       Field[] fields = entity.getDeclaredFields();
+
+        for (Field field : fields) {
+            field.setAccessible(true);
+            if (!this.checkIfColumnExist(field,entity)){
+               columnsToAdd += this.getColumnName(field) + " "
+                       + this.getTableTypes(field) + " ,";
+            }
+        }
+        if(!columnsToAdd.isEmpty()) {
+            query += columnsToAdd.substring(0, columnsToAdd.length() - 1);
+            connection.prepareStatement(query).execute();
+        }
+    }
+
+    @Override
+    public <T> void doCreate(Class<T> entity) throws SQLException {
+        String query = "CREATE TABLE " + this.getTableName(entity) + " ( ";
+        String columnsDefinition = "";
+        Field[] fields = entity.getDeclaredFields();
+        for (Field field : fields) {
+            field.setAccessible(true);
+            columnsDefinition += this.getColumnName(field) + " " + this.getTableTypes(field);
+            if (field.isAnnotationPresent(Id.class)){
+                columnsDefinition += " PRIMARY KEY AUTO_INCREMENT ,";
+            }else {
+                columnsDefinition += " ,";
+            }
+        }
+
+        columnsDefinition = columnsDefinition.substring(0,columnsDefinition.length() - 1) + ")";
+        query += columnsDefinition;
+        connection.prepareStatement(query).execute();
+    }
+
+    private String getTableTypes(Field field){
+        switch (field.getType().getSimpleName()){
+            case "int":
+            case "Integer":
+                return "INT";
+            case "String":
+                return "VARCHAR(50)";
+            case "Date":
+                return "DATE";
+            case "BigDecimal":
+                return "DECIMAL(10,2)";
+            case "Double":
+                return "DOUBLE(10,2)";
+            default:
+                return "";
+
+        }
+    }
+
+    @Override
     public boolean persist(E entity) throws IllegalAccessException, SQLException {
         Field primary = this.getId(entity.getClass());
         primary.setAccessible(true);
@@ -38,6 +94,12 @@ public class EntityManager<E> implements DbContext<E>{
     }
 
     private boolean doInsert(E entity, Field primary) throws IllegalAccessException, SQLException {
+        if(!this.checkIfTableExist(entity.getClass())){
+          this.doCreate(entity.getClass());
+        }
+
+        this.doAlter(entity.getClass());
+
         String query = "INSERT INTO " + this.getTableName(entity.getClass()) + " ";
         String columns = "(";
         String values = "(";
@@ -99,10 +161,12 @@ public class EntityManager<E> implements DbContext<E>{
         return connection.prepareStatement(query).execute();
     }
 
+    @Override
     public Iterable<E> find(Class<E> table) throws InvocationTargetException, SQLException, InstantiationException, IllegalAccessException, NoSuchMethodException {
         return this.find(table,null);
     }
 
+    @Override
     public Iterable<E> find(Class<E> table, String where) throws SQLException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
         Statement statement = connection.createStatement();
         String query = "SELECT * FROM " + this.getTableName(table) +
@@ -119,10 +183,12 @@ public class EntityManager<E> implements DbContext<E>{
         return entities;
     }
 
+    @Override
     public E findFirst(Class<E> table) throws InvocationTargetException, SQLException, InstantiationException, IllegalAccessException, NoSuchMethodException {
         return this.findFirst(table,null);
     }
 
+    @Override
     public E findFirst(Class<E> table, String where) throws SQLException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
         Statement statement = connection.createStatement();
         String query = "SELECT * FROM " + this.getTableName(table) +
@@ -132,6 +198,17 @@ public class EntityManager<E> implements DbContext<E>{
         resultSet.next();
         this.fillEntity(table,resultSet,entity);
         return entity;
+    }
+
+    @Override
+    public boolean delete(E entity) throws SQLException, IllegalAccessException {
+        String query = "DELETE FROM " + this.getTableName(entity.getClass()) +
+                " WHERE id = ";
+
+       Field value = this.getId(entity.getClass());
+       value.setAccessible(true);
+       query += value.get(entity);
+        return connection.prepareStatement(query).execute();
     }
 
     private Field getId(Class entity){
@@ -176,4 +253,18 @@ public class EntityManager<E> implements DbContext<E>{
             field.set(instance,resultSet.getString(fieldName));
         }
     }
+    private boolean checkIfTableExist(Class entity) throws SQLException {
+        String query = "SELECT TABLE_NAME FROM information_schema.TABLES "+
+                "WHERE TABLE_SCHEMA = " + "'exams_mysql' " +
+                "AND TABLE_NAME = '" + this.getTableName(entity) + "'";
+
+        return connection.prepareStatement(query).executeQuery().next();
+    }
+    private <T> boolean checkIfColumnExist(Field field,Class<T> entity) throws SQLException {
+        String query = "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                + "WHERE COLUMN_NAME = '" + this.getColumnName(field) +
+                "' AND TABLE_NAME LIKE '" + this.getTableName(entity) + "' LIMIT 1";
+        return connection.prepareStatement(query).executeQuery().next();
+    }
+
 }
