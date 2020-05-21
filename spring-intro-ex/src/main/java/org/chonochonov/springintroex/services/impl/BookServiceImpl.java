@@ -76,6 +76,16 @@ public class BookServiceImpl implements BookService {
         return this.bookRepository.findAllByReleaseDateAfter(localDate);
     }
 
+    @Override
+    public void setNewPrice() {
+        this.bookRepository.increasePriceOfBooksWithCopiesLesserThan(new BigDecimal("1.10"),1000);
+    }
+
+    @Override
+    public Collection<Book> getBooksByCopiesAndAge() {
+       return this.bookRepository.findAllByCopiesLessThanEqualAndAgeRestrictionEqualsOrderByPrice(10000,AgeRestriction.ADULT);
+    }
+
     private Set<Category> getRandomCategories() {
         Set<Category> random = new HashSet<>();
         Random random1 = new Random();

@@ -8,4 +8,6 @@ import java.util.Collection;
 public interface BookService {
     void seedBooks() throws IOException;
     Collection<Book> getBooksByReleaseDate();
+    void setNewPrice();
+    Collection<Book> getBooksByCopiesAndAge();
 }
